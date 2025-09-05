@@ -6,7 +6,7 @@ import { decode } from 'react-native-quick-base64';
 import { LineChart } from 'react-native-chart-kit';
 import FFT from 'fft.js';
 
-const USE_MOCK = true; // false, se for um android real
+const USE_MOCK = false; // false, se for um android real
 
 const bleManager = USE_MOCK ? null : new BleManager();
 //const bleManager = new BleManager();

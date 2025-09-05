@@ -35,3 +35,8 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# Pastas de build do Android
+android/build/
+android/app/build/
+android/.gradle/

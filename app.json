@@ -2,6 +2,7 @@
   "expo": {
     "name": "acelerometro",
     "slug": "acelerometro",
+    "scheme": "acelerometroapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -30,6 +31,9 @@
       "eas": {
         "projectId": "9be508f0-3947-417e-8a0f-5bd72f5ef485"
       }
-    }
+    },
+    "plugins": [
+      "react-native-edge-to-edge"
+    ]
   }
 }
