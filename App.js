@@ -1,12 +1,14 @@
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, PermissionsAndroid, ScrollView, Button, Dimensions, Platform } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { decode } from 'react-native-quick-base64';
 import { LineChart } from 'react-native-chart-kit';
 import FFT from 'fft.js';
 
 const USE_MOCK = false; // false, se for um android real
+const screenWidth = Dimensions.get('window').width;
+const MAX_PONTOS_HISTORICO = 300;
 
 const SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
 const RX_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"; // para enviar dados ao ESP32
@@ -83,16 +85,22 @@ export default function App() {
 
   const [deviceID, setDeviceID] = useState(null);
   const [acelerometro, setAcelerometro] = useState({ Ax: 0, Ay: 0, Az: 0 }); // Inicia como objeto
-  const [RxChar, setRxChar] = useState(null);
   const [historico, setHistorico] = useState({ Ax: [0, 0], Ay: [0, 0], Az: [0, 0] });
   const [connectionStatus, setConnectionStatus] = useState("Aguardando permissões...");
-  const [modo, setModo] = useState("time");
+
 
   useEffect(() => {
     if (!USE_MOCK) {
       bleManagerRef.current = new BleManager();
+
       return () => {
-        bleManagerRef.current.destroy(); // se disponível
+        if (deviceRef.current) {
+          deviceRef.current.cancelConnection()
+            .catch(err => console.log("Erro ao cancelar conexão:", err));
+        }
+        if (bleManagerRef.current) {
+          bleManagerRef.current.destroy();
+        }
       };
     }
   }, []);
@@ -157,7 +165,6 @@ export default function App() {
   const fftX = calcularFFT(historico.Ax, 10);
   const fftY = calcularFFT(historico.Ay, 10);
   const fftZ = calcularFFT(historico.Az, 10);
-
   // -----------------------------
   // REAL BLE MODE
   // -----------------------------
@@ -179,54 +186,45 @@ export default function App() {
     });
   };
 
-  useEffect(() => {
-    if (!USE_MOCK){
-      searchAndConnectToDevice();
+  const connectToDevice = async (device) => {
+    if (deviceRef.current) {
+      console.log("Já existe um device conectado:", deviceRef.current.id);
+      return deviceRef.current;
     }
-  }, []);
 
-  const connectToDevice = (device) => {
-    return device.connect()
-      .then((device) => {
-        setDeviceID(device.id);
-        setConnectionStatus("Connected");
-        deviceRef.current = device;
-        return device.discoverAllServicesAndCharacteristics();
-      })
-      .then((device) => {
-        // CORREÇÃO: O app precisa monitorar a característica que o ESP32 USA PARA NOTIFICAR (TX)
-        return device.monitorCharacteristicForService(
-          SERVICE_UUID,
-          TX_UUID, // <-- AQUI ESTÁ A CORREÇÃO MAIS IMPORTANTE
-          (error, char) => {
-            if (error) {
-              console.error(error);
-              setConnectionStatus(`Error: ${error.reason}`);
-              return;
-            }
+    try {
+      const connectedDevice = await device.connect();
+      setDeviceID(connectedDevice.id);
+      setConnectionStatus("Connected");
+      deviceRef.current = connectedDevice;
 
-            const decodedStr = base64ToUtf8(char.value);
-            const [Ax, Ay, Az] = decodedStr.trim().split(",");
-            setAcelerometro({ Ax, Ay, Az });
+      await connectedDevice.discoverAllServicesAndCharacteristics();
 
-            const ax = parseFloat(Ax);
-            const ay = parseFloat(Ay);
-            const az = parseFloat(Az);
-
-            if (!isNaN(ax) && !isNaN(ay) && !isNaN(az)) {
-              setHistorico(prev => ({
-                Ax: [...prev.Ax.slice(-49), ax],
-                Ay: [...prev.Ay.slice(-49), ay],
-                Az: [...prev.Az.slice(-49), az],
-              }));
-            }
+      connectedDevice.monitorCharacteristicForService(
+        SERVICE_UUID,
+        TX_UUID,
+        (error, char) => {
+          if (error) {
+            console.error(error);
+            setConnectionStatus(`Error: ${error.reason}`);
+            return;
           }
-        );
-      })
-      .catch((error) => {
-        console.log(error);
-        setConnectionStatus("Error in Connection");
-      });
+          const decodedStr = base64ToUtf8(char.value);
+          const [Ax, Ay, Az] = decodedStr.trim().split(",");
+          setAcelerometro({ Ax, Ay, Az });
+          setHistorico(prev => ({
+            Ax: [...prev.Ax.slice(-MAX_PONTOS_HISTORICO + 1), parseFloat(Ax)],
+            Ay: [...prev.Ay.slice(-MAX_PONTOS_HISTORICO + 1), parseFloat(Ay)],
+            Az: [...prev.Az.slice(-MAX_PONTOS_HISTORICO + 1), parseFloat(Az)],
+          }));
+        }
+      );
+
+      return connectedDevice;
+    } catch (error) {
+      console.log(error);
+      setConnectionStatus("Error in Connection");
+    }
   };
 
   useEffect(() => {
@@ -255,36 +253,55 @@ export default function App() {
     return () => subscription.remove();
   }, [deviceID]);
 
-  const MAX_POINTS = 50; // janela de tempo visível
+  //const MAX_POINTS = 50; // janela de tempo visível
 
   const renderChart = (label, data, color) => {
+    const scrollViewRef = useRef(null);
+
+    // Efeito para rolar o gráfico para a direita sempre que novos dados chegam
+    useEffect(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, [data]);
+
     if (!Array.isArray(data) || data.length < 2) {
       return <Text style={{ marginVertical: 8 }}>Aguardando dados…</Text>;
     }
 
-    // mantém só os últimos MAX_POINTS
-    const visibleData = data.slice(-MAX_POINTS);
+    // Define a largura de cada ponto. Ajuste este valor para mais ou menos "zoom"
+    const PONTO_LARGURA = 15;
+    // Calcula a largura total do gráfico. Deve ser no mínimo a largura da tela.
+    const chartWidth = Math.max(screenWidth - 40, data.length * PONTO_LARGURA);
 
     return (
-      <LineChart
-        data={{
-          labels: visibleData.map((_, i) => i.toString()), // eixo X anda junto
-          datasets: [{ data: visibleData, color: () => color }],
-        }}
-        width={Dimensions.get("window").width - 40}
-        height={220}
-        chartConfig={{
-          backgroundColor: "#fff",
-          backgroundGradientFrom: "#f5f5f5",
-          backgroundGradientTo: "#eaeaea",
-          decimalPlaces: 2,
-          color: () => color,
-          labelColor: () => "#333",
-          style: { borderRadius: 16 },
-        }}
-        bezier
-        style={{ marginVertical: 8, borderRadius: 16 }}
-      />
+      <View style={styles.chartContainer}>
+        <ScrollView
+          horizontal // Ativa o scroll horizontal
+          ref={scrollViewRef}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 30 }} // Adiciona 30px de espaço à esquerda e à direita
+        >
+          <LineChart
+            data={{
+              labels: [], // Sem rótulos no eixo horizontal, como pedido
+              datasets: [{ data: data, color: () => color }], // Usa o array de dados completo
+            }}
+            width={chartWidth} // Usa a largura dinâmica calculada
+            height={220}
+            chartConfig={{
+              backgroundColor: "#fff",
+              backgroundGradientFrom: "#f5f5f5",
+              backgroundGradientTo: "#eaeaea",
+              decimalPlaces: 2,
+              color: () => color,
+              labelColor: () => "#333",
+              style: { borderRadius: 16 },
+              propsForDots: { r: '3' } // Pontos um pouco menores para um visual mais limpo
+            }}
+            bezier
+            style={{ borderRadius: 16}} // Um respiro no final do gráfico
+          />
+        </ScrollView>
+      </View>
     );
   };
 
@@ -293,26 +310,41 @@ export default function App() {
     if (!Array.isArray(data) || data.length < 2) {
       return <Text style={{ marginVertical: 8 }}>Aguardando dados…</Text>;
     }
+
+    // 1. Define a largura de cada ponto no gráfico FFT
+    const PONTO_LARGURA_FFT = 35; // Aumentei um pouco para dar espaço às labels de frequência
+
+    // 2. Calcula a largura total do gráfico para que ele seja maior que a tela
+    const chartWidth = Math.max(screenWidth, data.length * PONTO_LARGURA_FFT);
     return (
-      <LineChart
-        data={{
-          labels: data.map(p => Number(p.x).toFixed(1)), // ver item 3 se trocar para {freq,mag}
-          datasets: [{ data: data.map(p => Number(p.y) || 0), color: () => color }],
-        }}
-        width={Dimensions.get("window").width - 40}
-        height={220}
-        chartConfig={{
-          backgroundColor: "#fff",
-          backgroundGradientFrom: "#f5f5f5",
-          backgroundGradientTo: "#eaeaea",
-          decimalPlaces: 2,
-          color: () => color,
-          labelColor: () => "#333",
-          style: { borderRadius: 16 },
-        }}
-        bezier
-        style={{ marginVertical: 8, borderRadius: 16 }}
-      />
+      <View style={styles.chartContainer}> 
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          // 4. Adiciona o padding para dar espaço às labels verticais
+          contentContainerStyle={{ paddingHorizontal: 20 }}
+        >
+          <LineChart
+            data={{
+              labels: data.map(p => Number(p.x).toFixed(1)),
+              datasets: [{ data: data.map(p => Number(p.y) || 0), color: () => color }],
+            }}
+            width={chartWidth} // Usa a nova largura calculada
+            height={220}
+            chartConfig={{
+              backgroundColor: "#fff",
+              backgroundGradientFrom: "#f5f5f5",
+              backgroundGradientTo: "#eaeaea",
+              decimalPlaces: 2,
+              color: () => color,
+              labelColor: () => "#333",
+              style: { borderRadius: 16 },
+            }}
+            bezier
+            style={{ borderRadius: 16 }} // Removemos a margem que estava aqui
+          />
+        </ScrollView>
+      </View>
     );
   };
 
@@ -327,35 +359,24 @@ export default function App() {
         <Text>Az: {acelerometro.Az}</Text>
         <Text>Status: {connectionStatus}</Text>
 
-        <View style={styles.buttons}>
-          <Button title="Aceleração" onPress={() => setModo("time")} />
-          <Button title="FFT" onPress={() => setModo("fft")} />
-        </View>
+        <Text style={styles.chartTitle}>Eixo X (tempo): {acelerometro.Ax}</Text>
+        {renderChart("X", historico.Ax, "red")}
 
-        {modo === "time" ? (
-          <>
-            <Text style={styles.chartTitle}>Eixo X (tempo)</Text>
-            {renderChart("X", historico.Ax, "red")}
+        <Text style={styles.chartTitle}>Eixo Y (tempo): {acelerometro.Ay}</Text>
+        {renderChart("Y", historico.Ay, "green")}
 
-            <Text style={styles.chartTitle}>Eixo Y (tempo)</Text>
-            {renderChart("Y", historico.Ay, "green")}
+        <Text style={styles.chartTitle}>Eixo Z (tempo): {acelerometro.Az}</Text>
+        {renderChart("Z", historico.Az, "blue")}
 
-            <Text style={styles.chartTitle}>Eixo Z (tempo)</Text>
-            {renderChart("Z", historico.Az, "blue")}
-          </>
-        ) : (
-          <>
-            <Text style={styles.chartTitle}>Eixo X (FFT)</Text>
-            {renderFFTChart("X FFT", fftX, "purple")}
+        <Text style={styles.chartTitle}>Eixo X (FFT)</Text>
+        {renderFFTChart("X FFT", fftX, "purple")}
 
-            <Text style={styles.chartTitle}>Eixo Y (FFT)</Text>
-            {renderFFTChart("Y FFT", fftY, "orange")}
+        <Text style={styles.chartTitle}>Eixo Y (FFT)</Text>
+        {renderFFTChart("Y FFT", fftY, "orange")}
 
-            <Text style={styles.chartTitle}>Eixo Z (FFT)</Text>
-            {renderFFTChart("Z FFT", fftZ, "cyan")}
-          </>
-        )}
-
+        <Text style={styles.chartTitle}>Eixo Z (FFT)</Text>
+        {renderFFTChart("Z FFT", fftZ, "cyan")}
+      
         <StatusBar style="auto" />
       </View>
     </ScrollView>
@@ -381,10 +402,12 @@ const styles = StyleSheet.create({
     marginVertical: 10,
     fontWeight: "bold",
   },
-  buttons: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    width: "100%",
-    marginVertical: 10,
-  },
+  chartContainer: {
+    marginVertical: 8,
+    borderRadius: 16,
+    width: screenWidth - 40, 
+    height: 220,
+    overflow: 'hidden', // Importante para o borderRadius funcionar
+    backgroundColor: '#f5f5f5', // Para combinar com o fundo do gráfico
+  }
 });
