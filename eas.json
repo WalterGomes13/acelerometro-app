@@ -9,13 +9,15 @@
       "developmentClient": true,
       "distribution": "internal"
     },
-    "android":{
-      "node":"18.19.1"
-    },
     "preview": {
-      "distribution": "internal"
+      "node": "18.19.1",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
+      "node": "18.19.1",
       "autoIncrement": true
     }
   },
