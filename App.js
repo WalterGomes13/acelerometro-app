@@ -3,21 +3,21 @@ import { StyleSheet, Text, View, PermissionsAndroid, ScrollView, Button, Dimensi
 import { BleManager } from 'react-native-ble-plx';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { decode } from 'react-native-quick-base64';
-import { LineChart } from 'react-native-chart-kit';
+import { Canvas, Path, Skia, Text as SkiaText, useFont } from '@shopify/react-native-skia';
+import { useSharedValue, useDerivedValue, withTiming } from 'react-native-reanimated';
 import FFT from 'fft.js';
 
-const USE_MOCK = false; // false, se for um android real
-const screenWidth = Dimensions.get('window').width;
+const PADDING = { top: 20, right: 30, bottom: 30, left: 40 }; // left maior para labels Y
+const containerWidth = Dimensions.get('window').width - 40;
 const MAX_PONTOS_HISTORICO = 300;
 
 const SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
-const RX_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"; // para enviar dados ao ESP32
 const TX_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"; // para receber dados do ESP32
 
 // -----------------------------
 // Função para calcular FFT
 // -----------------------------
-function calcularFFT(dados, sampleRate = 20) {
+function calcularFFT(dados, sampleRate = 10) {
   const N = 64;
   const slice = Array.isArray(dados) ? dados.slice(-N) : [];
 
@@ -79,53 +79,165 @@ function base64ToUtf8(base64Str) {
   return '';
 }
 
+const SkiaChart = ({ data, color, chartWidth, chartHeight, isFFT = false, yTicks = 4 }) => {
+  const graphWidth = chartWidth - PADDING.left - PADDING.right;
+  const graphHeight = chartHeight - PADDING.top - PADDING.bottom;
+  const font = useFont(require('./assets/fonts/RobotoSlab[wght].ttf'), 10);
+
+  // Coerce e normaliza os dados para números
+  const parsed = useMemo(() => {
+    if (!Array.isArray(data)) return [];
+    return isFFT
+      ? data.map(p => ({ x: Number(p.x) || 0, y: Number(p.y) || 0 }))
+      : data.map(v => Number(v) || 0);
+  }, [data, isFFT]);
+
+  // Cria o Skia.Path e calcula ticks Y (useMemo para performance)
+  const { skPath, yTicksArray } = useMemo(() => {
+    if (!parsed || parsed.length < 2) {
+      return { skPath: Skia.Path.Make(), yTicksArray: [] };
+    }
+
+    const values = isFFT ? parsed.map(p => p.y) : parsed;
+    let minY = Math.min(...values);
+    let maxY = Math.max(...values);
+    if (minY === maxY) { minY -= 0.5; maxY += 0.5; } // evita zero range
+    const rangeY = maxY - minY;
+
+    // monta path SVG
+    const commands = values.map((val, i) => {
+      const x = PADDING.left + (i / (values.length - 1)) * graphWidth;
+      const y = PADDING.top + graphHeight - ((val - minY) / rangeY) * graphHeight;
+      return `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    }).join(' ');
+
+    const pathFromSvg = Skia.Path.MakeFromSVGString(commands) || Skia.Path.Make();
+
+    // ticks Y
+    const ticks = [];
+    for (let t = 0; t <= yTicks; t++) {
+      const v = minY + (t / yTicks) * rangeY;
+      const y = PADDING.top + graphHeight - ((v - minY) / rangeY) * graphHeight;
+      ticks.push({ value: v, y });
+    }
+
+    return { skPath: pathFromSvg, yTicksArray: ticks };
+  }, [parsed, chartWidth, chartHeight, isFFT]);
+
+  // fonte ainda carregando -> retorne espaço reservado
+  if (!font) return <View style={{ width: chartWidth, height: chartHeight }} />;
+
+  return (
+    <Canvas style={{ width: chartWidth, height: chartHeight }}>
+      {/* desenha labels Y */}
+      {yTicksArray.map((t, i) => (
+        <SkiaText
+          key={`yt-${i}`}
+          x={6}
+          y={t.y + 4}
+          text={t.value.toFixed(2)}
+          font={font}
+          color="black"
+        />
+      ))}
+
+      {/* desenha a linha do gráfico */}
+      <Path path={skPath} style="stroke" color={color} strokeWidth={2} />
+
+      {/* se FFT: desenhar labels X a cada N pontos */}
+      {isFFT && parsed.map((p, i) => {
+        if (i % 5 !== 0) return null;
+        const x = PADDING.left + (i / (parsed.length - 1)) * graphWidth - 6;
+        const y = chartHeight - PADDING.bottom + 14;
+        return (
+          <SkiaText key={`xt-${i}`} x={x} y={y} text={p.x.toFixed(0)} font={font} color="black" />
+        );
+      })}
+    </Canvas>
+  );
+};
+
+const DynamicChart = ({ 
+  label, 
+  data, 
+  color, 
+  isFFT = false, 
+  pointWidth = 10, 
+  chartHeight = 220,
+  maxPoints = 200   // 🔹 número máximo de pontos exibidos
+}) => {
+  const scrollRef = useRef(null);
+  const visibleWidth = Dimensions.get('window').width - 40;
+
+  // 🔹 Mantém só os últimos N pontos
+  const trimmedData = Array.isArray(data) 
+    ? data.slice(-maxPoints) 
+    : [];
+
+  const dataLen = trimmedData.length;
+  const chartWidth = Math.max(visibleWidth, dataLen * pointWidth);
+
+  useEffect(() => {
+    if (!isFFT && chartWidth > visibleWidth) {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [dataLen, isFFT, chartWidth]);
+
+  if (dataLen < 2) {
+    return (
+      <View style={styles.chartPlaceholder}>
+        <Text>Aguardando dados...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.chartContainer}>
+      <ScrollView
+        horizontal
+        ref={scrollRef}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ width: chartWidth }}
+      >
+        <SkiaChart
+          data={trimmedData}
+          color={color}
+          chartWidth={chartWidth}
+          chartHeight={chartHeight}
+          isFFT={isFFT}
+        />
+      </ScrollView>
+    </View>
+  );
+};
+
 export default function App() {
   const bleManagerRef = useRef(null);
   const deviceRef = useRef(null);
 
   const [deviceID, setDeviceID] = useState(null);
   const [acelerometro, setAcelerometro] = useState({ Ax: 0, Ay: 0, Az: 0 }); // Inicia como objeto
-  const [historico, setHistorico] = useState({ Ax: [0, 0], Ay: [0, 0], Az: [0, 0] });
+  const [historico, setHistorico] = useState({ Ax: [], Ay: [], Az: [] });
   const [connectionStatus, setConnectionStatus] = useState("Aguardando permissões...");
 
+  const bufferRef = useRef([]);
+  const animationFrameId = useRef(null);
 
   useEffect(() => {
-    if (!USE_MOCK) {
-      bleManagerRef.current = new BleManager();
+    bleManagerRef.current = new BleManager();
 
-      return () => {
-        if (deviceRef.current) {
-          deviceRef.current.cancelConnection()
-            .catch(err => console.log("Erro ao cancelar conexão:", err));
-        }
-        if (bleManagerRef.current) {
-          bleManagerRef.current.destroy();
-        }
-      };
-    }
+    return () => {
+      if (deviceRef.current) {
+        deviceRef.current.cancelConnection()
+          .catch(err => console.log("Erro ao cancelar conexão:", err));
+      }
+      if (bleManagerRef.current) {
+        bleManagerRef.current.destroy();
+      }
+    };
   }, []);
 
-  // -----------------------------
-  // MOCK MODE
-  // -----------------------------
   useEffect(() => {
-    if (USE_MOCK) {
-      // Lógica do MOCK movida para cá para unificar
-      setConnectionStatus("Connected (Mock)");
-      const interval = setInterval(() => {
-        const Ax = (Math.random() * 6 - 3).toFixed(2);
-        const Ay = (Math.random() * 6 - 3).toFixed(2);
-        const Az = (Math.random() * 6 - 3).toFixed(2);
-        setAcelerometro({ Ax, Ay, Az });
-        setHistorico(prev => ({
-          Ax: [...prev.Ax.slice(-63), parseFloat(Ax)],
-          Ay: [...prev.Ay.slice(-63), parseFloat(Ay)],
-          Az: [...prev.Az.slice(-63), parseFloat(Az)],
-        }));
-      }, 100);
-      return () => clearInterval(interval);
-    }
-
     const requestPermissionsAndStartScan = async () => {
       // Verifica se é Android
       if (Platform.OS === 'android') {
@@ -157,14 +269,51 @@ export default function App() {
     };
 
     requestPermissionsAndStartScan();
-  }, [USE_MOCK]);
+  }, []);
+
+  useEffect(() => {
+    const gameLoop = () => {
+      // Pega todos os dados recebidos desde o último frame
+      const batch = [...bufferRef.current];
+      bufferRef.current = [];
+
+      if (batch.length > 0) {
+        // Pega APENAS o último e mais recente ponto do lote
+        const lastPoint = batch[batch.length - 1];
+
+        // Atualiza o estado do histórico com este único ponto
+        setHistorico(prev => ({
+          Ax: [...prev.Ax, lastPoint.Ax].slice(-MAX_PONTOS_HISTORICO),
+          Ay: [...prev.Ay, lastPoint.Ay].slice(-MAX_PONTOS_HISTORICO),
+          Az: [...prev.Az, lastPoint.Az].slice(-MAX_PONTOS_HISTORICO),
+        }));
+        
+        // Atualiza o valor numérico também
+        setAcelerometro(lastPoint);
+      }
+
+      // Agenda o próximo frame
+      animationFrameId.current = requestAnimationFrame(gameLoop);
+    };
+
+    // Inicia o loop
+    animationFrameId.current = requestAnimationFrame(gameLoop);
+
+    // Função de limpeza para parar o loop quando o componente for desmontado
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+    };
+  }, []); 
 
   // -----------------------------
   // FFT
   // -----------------------------
-  const fftX = calcularFFT(historico.Ax, 10);
-  const fftY = calcularFFT(historico.Ay, 10);
-  const fftZ = calcularFFT(historico.Az, 10);
+  const fftX = useMemo(() => calcularFFT(historico.Ax), [historico.Ax]);
+  const fftY = useMemo(() => calcularFFT(historico.Ay), [historico.Ay]);
+  const fftZ = useMemo(() => calcularFFT(historico.Az), [historico.Az]);
+
   // -----------------------------
   // REAL BLE MODE
   // -----------------------------
@@ -209,14 +358,13 @@ export default function App() {
             setConnectionStatus(`Error: ${error.reason}`);
             return;
           }
-          const decodedStr = base64ToUtf8(char.value);
-          const [Ax, Ay, Az] = decodedStr.trim().split(",");
-          setAcelerometro({ Ax, Ay, Az });
-          setHistorico(prev => ({
-            Ax: [...prev.Ax.slice(-MAX_PONTOS_HISTORICO + 1), parseFloat(Ax)],
-            Ay: [...prev.Ay.slice(-MAX_PONTOS_HISTORICO + 1), parseFloat(Ay)],
-            Az: [...prev.Az.slice(-MAX_PONTOS_HISTORICO + 1), parseFloat(Az)],
-          }));
+          const decodedStr = base64ToUtf8(char.value || '');
+          const parts = decodedStr.trim().split(",").map(s => parseFloat(s));
+          const Ax = Number.isFinite(parts[0]) ? parts[0] : 0;
+          const Ay = Number.isFinite(parts[1]) ? parts[1] : 0;
+          const Az = Number.isFinite(parts[2]) ? parts[2] : 0;
+
+          bufferRef.current.push({ Ax, Ay, Az });
         }
       );
 
@@ -228,8 +376,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (USE_MOCK) return;
-
     const subscription = bleManagerRef.current.onDeviceDisconnected(
       deviceID,
       (error, device) =>{
@@ -253,135 +399,38 @@ export default function App() {
     return () => subscription.remove();
   }, [deviceID]);
 
-  //const MAX_POINTS = 50; // janela de tempo visível
-
-  const renderChart = (label, data, color) => {
-    const scrollViewRef = useRef(null);
-
-    // Efeito para rolar o gráfico para a direita sempre que novos dados chegam
-    useEffect(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, [data]);
-
-    if (!Array.isArray(data) || data.length < 2) {
-      return <Text style={{ marginVertical: 8 }}>Aguardando dados…</Text>;
-    }
-
-    // Define a largura de cada ponto. Ajuste este valor para mais ou menos "zoom"
-    const PONTO_LARGURA = 15;
-    // Calcula a largura total do gráfico. Deve ser no mínimo a largura da tela.
-    const chartWidth = Math.max(screenWidth - 40, data.length * PONTO_LARGURA);
-
-    return (
-      <View style={styles.chartContainer}>
-        <ScrollView
-          horizontal // Ativa o scroll horizontal
-          ref={scrollViewRef}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 30 }} // Adiciona 30px de espaço à esquerda e à direita
-        >
-          <LineChart
-            data={{
-              labels: [], // Sem rótulos no eixo horizontal, como pedido
-              datasets: [{ data: data, color: () => color }], // Usa o array de dados completo
-            }}
-            width={chartWidth} // Usa a largura dinâmica calculada
-            height={220}
-            chartConfig={{
-              backgroundColor: "#fff",
-              backgroundGradientFrom: "#f5f5f5",
-              backgroundGradientTo: "#eaeaea",
-              decimalPlaces: 2,
-              color: () => color,
-              labelColor: () => "#333",
-              style: { borderRadius: 16 },
-              propsForDots: { r: '3' } // Pontos um pouco menores para um visual mais limpo
-            }}
-            bezier
-            style={{ borderRadius: 16}} // Um respiro no final do gráfico
-          />
-        </ScrollView>
-      </View>
-    );
-  };
-
-
-  const renderFFTChart = (label, data, color) => {
-    if (!Array.isArray(data) || data.length < 2) {
-      return <Text style={{ marginVertical: 8 }}>Aguardando dados…</Text>;
-    }
-
-    // 1. Define a largura de cada ponto no gráfico FFT
-    const PONTO_LARGURA_FFT = 35; // Aumentei um pouco para dar espaço às labels de frequência
-
-    // 2. Calcula a largura total do gráfico para que ele seja maior que a tela
-    const chartWidth = Math.max(screenWidth, data.length * PONTO_LARGURA_FFT);
-    return (
-      <View style={styles.chartContainer}> 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          // 4. Adiciona o padding para dar espaço às labels verticais
-          contentContainerStyle={{ paddingHorizontal: 20 }}
-        >
-          <LineChart
-            data={{
-              labels: data.map(p => Number(p.x).toFixed(1)),
-              datasets: [{ data: data.map(p => Number(p.y) || 0), color: () => color }],
-            }}
-            width={chartWidth} // Usa a nova largura calculada
-            height={220}
-            chartConfig={{
-              backgroundColor: "#fff",
-              backgroundGradientFrom: "#f5f5f5",
-              backgroundGradientTo: "#eaeaea",
-              decimalPlaces: 2,
-              color: () => color,
-              labelColor: () => "#333",
-              style: { borderRadius: 16 },
-            }}
-            bezier
-            style={{ borderRadius: 16 }} // Removemos a margem que estava aqui
-          />
-        </ScrollView>
-      </View>
-    );
-  };
-
-
-
   return (
     <ScrollView style={styles.scroll}>
       <View style={styles.container}>
-        <Text style={styles.title}>📡 Acelerômetro</Text>
+        <Text style={styles.title}>📡 Acelerômetro com Skia</Text>
         <Text>Ax: {acelerometro.Ax}</Text>
         <Text>Ay: {acelerometro.Ay}</Text>
         <Text>Az: {acelerometro.Az}</Text>
         <Text>Status: {connectionStatus}</Text>
 
-        <Text style={styles.chartTitle}>Eixo X (tempo): {acelerometro.Ax}</Text>
-        {renderChart("X", historico.Ax, "red")}
+        <Text style={styles.chartTitle}>Eixo X (tempo)</Text>
+        <DynamicChart label="X" data={historico.Ax} color="red" maxPoints={200} />
 
-        <Text style={styles.chartTitle}>Eixo Y (tempo): {acelerometro.Ay}</Text>
-        {renderChart("Y", historico.Ay, "green")}
+        <Text style={styles.chartTitle}>Eixo Y (tempo)</Text>
+        <DynamicChart label="Y" data={historico.Ay} color="green" maxPoints={200} />
 
-        <Text style={styles.chartTitle}>Eixo Z (tempo): {acelerometro.Az}</Text>
-        {renderChart("Z", historico.Az, "blue")}
+        <Text style={styles.chartTitle}>Eixo Z (tempo)</Text>
+        <DynamicChart label="Z" data={historico.Az} color="blue" maxPoints={200} />
 
         <Text style={styles.chartTitle}>Eixo X (FFT)</Text>
-        {renderFFTChart("X FFT", fftX, "purple")}
+        <DynamicChart label="X FFT" data={fftX} color="purple" isFFT={true} pointWidth={25} />
 
         <Text style={styles.chartTitle}>Eixo Y (FFT)</Text>
-        {renderFFTChart("Y FFT", fftY, "orange")}
+        <DynamicChart label="Y FFT" data={fftY} color="orange" isFFT={true} pointWidth={25} />
 
         <Text style={styles.chartTitle}>Eixo Z (FFT)</Text>
-        {renderFFTChart("Z FFT", fftZ, "cyan")}
+        <DynamicChart label="Z FFT" data={fftZ} color="cyan" isFFT={true} pointWidth={25} />
       
         <StatusBar style="auto" />
       </View>
     </ScrollView>
   );
-}
+};
 
 const styles = StyleSheet.create({
   scroll: {
@@ -392,22 +441,36 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     alignItems: 'center',
+    paddingBottom: 50,
   },
   title: {
     fontSize: 22,
+    fontWeight: 'bold',
     marginBottom: 10,
   },
   chartTitle: {
     textAlign: "center",
-    marginVertical: 10,
+    marginTop: 20,
+    marginBottom: 8,
     fontWeight: "bold",
+    fontSize: 16,
   },
   chartContainer: {
     marginVertical: 8,
     borderRadius: 16,
-    width: screenWidth - 40, 
+    width: containerWidth - 40, 
     height: 220,
-    overflow: 'hidden', // Importante para o borderRadius funcionar
-    backgroundColor: '#f5f5f5', // Para combinar com o fundo do gráfico
+    overflow: 'hidden',
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd'
+  },
+  chartPlaceholder: { // Novo estilo para quando não há dados
+    width: containerWidth - 40,
+    height: 220,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 16,
   }
 });
