@@ -1,13 +1,11 @@
 {
   "expo": {
-    "name": "UNIFOR Motion Lab",
-    "slug": "acelerometro",
-    "scheme": "acelerometroapp",
+    "name": "AppVibracoes",
+    "slug": "AppVibracoes",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -21,25 +19,19 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.anonymous.acelerometro",
       "permissions": [
-        "android.permission.BLUETOOTH_SCAN",
-        "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.ACCESS_FINE_LOCATION"
-      ]
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
+      ],
+      "package": "com.android"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "extra": {
-      "eas": {
-        "projectId": "9be508f0-3947-417e-8a0f-5bd72f5ef485"
-      }
-    },
     "plugins": [
-      "react-native-edge-to-edge",
       "react-native-ble-plx",
-      "expo-asset"
+      "expo-font"
     ]
   }
 }

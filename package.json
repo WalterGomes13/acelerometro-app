@@ -1,7 +1,7 @@
 {
-  "name": "acelerometro",
+  "name": "appvibracoes",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
@@ -9,20 +9,16 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@shopify/react-native-skia": "1.5.0",
-    "expo": "~52.0.28",
-    "expo-asset": "~11.0.5",
-    "expo-dev-client": "~5.0.20",
-    "expo-status-bar": "~2.0.0",
+    "@shopify/react-native-skia": "1.2.3",
+    "expo": "~51.0.28",
+    "expo-font": "~12.0.10",
+    "expo-status-bar": "~1.12.1",
     "fft.js": "^4.0.4",
-    "react": "18.3.1",
-    "react-native": "0.76.9",
+    "react": "18.2.0",
+    "react-native": "0.74.5",
     "react-native-ble-plx": "^3.5.0",
-    "react-native-chart-kit": "^6.12.0",
-    "react-native-edge-to-edge": "1.6.0",
-    "react-native-quick-base64": "^2.2.1",
-    "react-native-reanimated": "~3.16.1",
-    "react-native-svg": "15.8.0"
+    "react-native-quick-base64": "^2.2.2",
+    "react-native-reanimated": "~3.10.1"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"

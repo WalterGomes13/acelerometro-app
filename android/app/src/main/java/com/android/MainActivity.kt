@@ -1,4 +1,4 @@
-package com.anonymous.acelerometro
+package com.android
 
 import android.os.Build
 import android.os.Bundle

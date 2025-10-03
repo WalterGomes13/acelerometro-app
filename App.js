@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, PermissionsAndroid, ScrollView, Button, Dimensions, Platform, ImageBackground, Image } from 'react-native';
+import { useFonts } from 'expo-font';
+import { StyleSheet, Text, View, PermissionsAndroid, ScrollView, TouchableOpacity, Dimensions, Platform, ImageBackground, Image, ActivityIndicator } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { decode } from 'react-native-quick-base64';
@@ -151,7 +152,7 @@ const DynamicChart = ({
 }) => {
   const scrollRef = useRef(null);
   const visibleWidth = Dimensions.get('window').width - 40;
-  const font = useFont(require('./assets/fonts/RobotoSlab[wght].ttf'), 10);
+  const font = useFont(require('./assets/fonts/Satoshi-Regular.otf'), 10);
   
   const trimmedData = Array.isArray(data) ? data.slice(-maxPoints) : [];
   const dataLen = trimmedData.length;
@@ -228,7 +229,7 @@ const DynamicChart = ({
   if (dataLen < 2) {
     return (
       <View style={styles.chartPlaceholder}>
-        <Text>Aguardando dados...</Text>
+        <Text style={styles.infoText}>Aguardando dados...</Text>
       </View>
     );
   }
@@ -294,31 +295,36 @@ export default function App() {
   const [historico, setHistorico] = useState({ Ax: [], Ay: [], Az: [] });
   const [connectionStatus, setConnectionStatus] = useState("Aguardando permissões...");
   const [foundDevice, setFoundDevice] = useState(null);
-
+  const [fontsLoaded, fontError] = useFonts({
+    'Satoshi-Regular': require('./assets/fonts/Satoshi-Regular.otf'),
+    'Satoshi-Medium': require('./assets/fonts/Satoshi-Medium.otf'),
+    'Satoshi-Bold': require('./assets/fonts/Satoshi-Bold.otf'),
+    'Satoshi-Black' : require('./assets/fonts/Satoshi-Black.otf')
+  })
   const bufferRef = useRef([]);
   const animationFrameId = useRef(null);
   const recordingStartTimeRef = useRef(null);
-
+  
   useEffect(() => {
     bleManagerRef.current = new BleManager();
-
+    
     return () => {
       if (deviceRef.current) {
         deviceRef.current.cancelConnection()
-          .catch(err => console.log("Erro ao cancelar conexão:", err));
+        .catch(err => console.log("Erro ao cancelar conexão:", err));
       }
       if (bleManagerRef.current) {
         bleManagerRef.current.destroy();
       }
     };
   }, []);
-
+  
   useEffect(() => {
     const requestPermissionsAndStartScan = async () => {
       // Verifica se é Android
       if (Platform.OS === 'android') {
         const apiLevel = Platform.Version;
-
+        
         let permissionsToRequest = [];
         if (apiLevel < 31) { // Android 11 e inferior
           permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
@@ -403,7 +409,7 @@ export default function App() {
       }
       if (device.name === "ESP32-MPU6050") {
         bleManagerRef.current.stopDeviceScan(); // CORREÇÃO: Usar a referência correta
-        setConnectionStatus("Dispositivo encontrado! Clique para conectar");
+        setConnectionStatus("Dispositivo encontrado!");
         setFoundDevice(device)
       }
     });
@@ -510,41 +516,49 @@ export default function App() {
     return () => subscription.remove();
   }, [deviceID]);
 
+  useEffect(() => {
+    if (fontError) {
+      console.error("ERRO DETALHADO AO CARREGAR FONTES:", fontError);
+    }
+  }, [fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null; 
+  }
+
   return (
     <View style={styles.mainContainer}>
       <StatusBar style="dark" />
 
-      <Image
-        source={require('./assets/adaptive-icon.png')}
-        style={styles.backgroundImage}
-        // blurRadius={1} // Opcional: para um efeito de desfoque
-      />
+      <View style={styles.backgroundImageContainer}>
+        <Image
+          source={require('./assets/adaptive-icon.png')}
+          style={styles.backgroundImage}
+        />
+      </View>
 
       <ScrollView style={styles.scroll}>
+        <View style={styles.titleContainer}>
+            <Image
+              source={require('./assets/icon-barra.png')}
+              style={styles.titleImage}
+            />
+        </View>
         <View style={styles.container}>
-          <Text style={styles.title}>📡 UNIFOR Motion Lab</Text>
-          <Text>Ax: {acelerometro.Ax}</Text>
-          <Text>Ay: {acelerometro.Ay}</Text>
-          <Text>Az: {acelerometro.Az}</Text>
-          <Text>Status: {connectionStatus}</Text>
+          <Text style={styles.infoText}>Ax: {acelerometro.Ax}</Text>
+          <Text style={styles.infoText}>Ay: {acelerometro.Ay}</Text>
+          <Text style={styles.infoText}>Az: {acelerometro.Az}</Text>
+          <Text style={styles.infoText}>Status: {connectionStatus}</Text>
 
           {foundDevice && !deviceID && (
-            <View style={styles.buttonContainer}>
-              <Button
-                title={`Conectar ao ${foundDevice.name}`}
-                onPress={handleConnectPress}
-                color="#201392ff" // Um tom de verde
-              />
-            </View>
+            <TouchableOpacity style={[styles.customButton, styles.connectButton]} onPress={handleConnectPress}>
+              <Text style={styles.customButtonText}>{`Conectar ao ${foundDevice.name}`}</Text>
+            </TouchableOpacity>
           )}
 
-          <View style={styles.buttonContainer}>
-            <Button 
-              title="Resetar Conexão" 
-              onPress={handleResetConnection} 
-              color="#88281dff" // Um tom de vermelho
-            />
-          </View>
+          <TouchableOpacity style={[styles.customButton, styles.resetButton]} onPress={handleResetConnection}>
+            <Text style={styles.customButtonText}>Resetar Conexão</Text>
+          </TouchableOpacity>
 
           <Text style={styles.chartTitle}>Eixo X (tempo): {acelerometro.Ax}</Text>
           <DynamicChart label="X" data={historico.Ax} color="#E74C3C" maxPoints={200} startTime={recordingStartTimeRef.current}/>
@@ -574,7 +588,14 @@ export default function App() {
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#ffffff',
+  },
+  backgroundImageContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -586,6 +607,7 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+    width: '100%',
     backgroundColor: 'transparent',
     position: 'absolute',
     top: 0,
@@ -600,40 +622,87 @@ const styles = StyleSheet.create({
     paddingBottom: 50,
     backgroundColor: 'transparent'
   },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#000000',
+  infoText: {
+    fontFamily: 'Satoshi-Regular',
+    fontSize: 16,
+    color: '#333333', 
+    lineHeight: 24,
+  },
+  titleContainer: {
+    width: '100%',
+    paddingTop: 50, 
+    paddingBottom: 15,
+    paddingHorizontal: 20, 
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#DDDDDD', 
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2, 
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  titleImage: {
+    height: 48,
+    width: undefined,
+    aspectRatio: 2506 / 1024,
+    resizeMode: 'contain',
   },
   buttonContainer: {
     marginVertical: 10,
     width: '80%',
+    borderRadius: 16,
+  },
+  customButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 5,
+    width: '90%', // Ajuste a largura como preferir
+  },
+  connectButton: {
+    backgroundColor: '#201392ff',
+  },
+  resetButton: {
+    backgroundColor: '#88281dff',
+  },
+  customButtonText: {
+    fontFamily: 'Satoshi-Bold', // <-- A FONTE SATOSHI APLICADA AQUI!
+    color: '#FFFFFF',
+    fontSize: 16,
   },
   chartTitle: {
     textAlign: "center",
     marginTop: 20,
     marginBottom: 8,
-    fontWeight: "bold",
+    fontFamily: 'Satoshi-Black',
     fontSize: 16,
     color: '#333333'
   },
   chartContainer: {
     marginVertical: 8,
     borderRadius: 16,
-    width: containerWidth - 40, 
+    width: containerWidth, 
     height: 220,
     overflow: 'hidden',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: 'rgba(245, 245, 245, 0.8)',
     borderWidth: 1,
     borderColor: '#ddd'
   },
   chartPlaceholder: { 
-    width: containerWidth - 40,
+    width: containerWidth,
     height: 220,
+    fontFamily: 'Satoshi-Regular',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: 'rgba(245, 245, 245, 0.8)',
     borderRadius: 16,
   }
 });
