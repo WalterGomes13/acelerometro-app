@@ -1,4 +1,4 @@
-package com.android
+package com.android.uniformotionlab
 
 import android.os.Build
 import android.os.Bundle

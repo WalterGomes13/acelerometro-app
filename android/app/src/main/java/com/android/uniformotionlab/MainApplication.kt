@@ -1,4 +1,4 @@
-package com.android
+package com.android.uniformotionlab
 
 import android.app.Application
 import android.content.res.Configuration

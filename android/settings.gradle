@@ -44,7 +44,7 @@ if (getRNMinorVersion() >= 75) {
   }
 }
 
-rootProject.name = 'AppVibracoes'
+rootProject.name = 'UNIFOR Motion Lab'
 
 dependencyResolutionManagement {
   versionCatalogs {

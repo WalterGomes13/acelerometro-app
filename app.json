@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "AppVibracoes",
-    "slug": "AppVibracoes",
+    "name": "UNIFOR Motion Lab",
+    "slug": "unifor-motion-lab",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -24,7 +24,7 @@
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.BLUETOOTH_CONNECT"
       ],
-      "package": "com.android"
+      "package": "com.android.uniformotionlab"
     },
     "web": {
       "favicon": "./assets/favicon.png"
