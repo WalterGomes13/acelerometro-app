@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
-import { Canvas, SkiaText } from '@shopify/react-native-skia';
+import { Canvas, Text as SkiaText } from '@shopify/react-native-skia';
 
 const PADDING = { top: 20, right: 30, bottom: 30, left: 40 };
 

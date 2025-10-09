@@ -1,21 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { StyleSheet, Text, View, PermissionsAndroid,Button, ScrollView, TouchableOpacity, Dimensions, Platform, Image, useWindowDimensions } from 'react-native';
+import { useMemo } from 'react';
+import { StyleSheet, Text, View,  ScrollView, TouchableOpacity, Image, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import {useBLE} from '../hooks/useBLE';
-import {DynamicChart} from '../components/charts/DynamicChart';
+import { DynamicChart } from '../components/charts/DynamicChart';
 import { calcularFFT } from '../utils/calculoFFT';
 import { useFont } from '@shopify/react-native-skia';
-
-const MAX_PONTOS_HISTORICO = 300;
-
-const CORES_GRAFICOS = {
-  tempoX: '#E74C3C',
-  fftX: '#C0392B',
-  tempoY: '#2ECC71',
-  fftY: '#27AE60',
-  tempoZ: '#3498DB',
-  fftZ: '#2980B9',
-};
 
 export const DashboardScreen = () =>{
     const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -25,31 +14,14 @@ export const DashboardScreen = () =>{
         acelerometro,
         connectionStatus,
         foundDevice,
-        scanForDevices,
-        connectToDevice,
-        resetConnection,
+        historico,
+        deviceID,
+        recordingStartTimeRef,
+        handleConnectPress,
+        handleResetConnection
     } = useBLE();
 
-    const [historico, setHistorico] = useState({ Ax: [], Ay: [], Az: [] });
-    const recordingStartTimeRef = useRef(null);
-    const skiaFont = useFont(require('../assets/fonts/Satoshi-Regular.otf'), 10);
-
-    useEffect(() => {
-        scanForDevices();
-    }, []);
-
-    useEffect(() => {
-        if (acelerometro.timestamp) { // Só roda se um novo dado do acelerômetro chegou
-        if (recordingStartTimeRef.current === null) {
-            recordingStartTimeRef.current = acelerometro.timestamp;
-        }
-        setHistorico(prev => ({
-            Ax: [...prev.Ax, { value: acelerometro.Ax, timestamp: acelerometro.timestamp }].slice(-MAX_PONTOS_HISTORICO),
-            Ay: [...prev.Ay, { value: acelerometro.Ay, timestamp: acelerometro.timestamp }].slice(-MAX_PONTOS_HISTORICO),
-            Az: [...prev.Az, { value: acelerometro.Az, timestamp: acelerometro.timestamp }].slice(-MAX_PONTOS_HISTORICO),
-        }));
-        }
-    }, [acelerometro]);
+    const skiaFont = useFont(require('../../assets/fonts/Satoshi-Regular.otf'), 10);
 
     const fftX = useMemo(() => calcularFFT(historico.Ax.map(p => p.value)), [historico.Ax]);
     const fftY = useMemo(() => calcularFFT(historico.Ay.map(p => p.value)), [historico.Ay]);
@@ -62,90 +34,103 @@ export const DashboardScreen = () =>{
     const chartCardWidth = isLandscape ? (windowWidth / 2) - 30 : windowWidth - 40;
 
     return (
-        <View style={styles.mainContainer}>
-            <StatusBar style="dark" />
-            <View style={styles.backgroundImageContainer}>
-                <Image source={require('../assets/adaptive-icon.png')} style={styles.backgroundImage} />
-            </View>
-
-            <ScrollView style={styles.scroll}>
-                <View style={styles.headerContainer}>
-                    <Image source={require('../assets/icon-barra.png')} style={styles.titleImage} />
-                </View>
-
-                <View style={styles.container}>
-                    <View style={isLandscape ? styles.topContainerLandscape : styles.topContainerPortrait}>
-                        <View style={styles.infoContainer}>
-                            <Text style={styles.infoText}>Status: {connectionStatus}</Text>
-                        </View>
-
-                        <View style={isLandscape ? styles.buttonRow : styles.buttonColumn}>
-                                {foundDevice && (
-                                    <View style={styles.buttonWrapper}>
-                                        <TouchableOpacity
-                                            style={[styles.customButton, styles.connectButton]}
-                                            onPress={() => connectToDevice(foundDevice)}
-                                        >
-                                            <Text style={styles.customButtonText}>
-                                                Conectar ao {foundDevice.name}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
-                            <View style={styles.buttonWrapper}>
-                                <TouchableOpacity
-                                style={[styles.customButton, styles.resetButton]}
-                                onPress={resetConnection}
-                                >
-                                    <Text style={styles.customButtonText}>
-                                        Resetar Conexão
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </View>
-
-                    <View style={styles.chartsWrapper}>
-                        {/* Gráfico X */}
-                        <Text style={styles.chartTitle}>Eixo X</Text>
-                        <View style={[styles.chartCard, { width: chartCardWidth }]}>
-                            <Text style={styles.infoText}>Gráfico da aceleração: {acelerometro.Ax.toFixed(2)}g</Text>
-                            <DynamicChart label="X" data={historico.Ax} color={CORES_GRAFICOS.tempoX} startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth} font={skiaFont}/>
-                        </View>
-                        <View style={[styles.chartCard, { width: chartCardWidth }]}>
-                            <Text style={styles.infoText}>Gráfico da transformada rápida (FFT)</Text>
-                            <DynamicChart label="X FFT" data={fftX} color={CORES_GRAFICOS.fftX} isFFT={true} pointWidth={25} containerWidth={chartCardWidth} font={skiaFont}/>
-                        </View>
-
-                        <View style={styles.separator} />
-
-                        {/* Gráfico Y */}
-                        <Text style={styles.chartTitle}>Eixo Y</Text>
-                        <View style={[styles.chartCard, { width: chartCardWidth }]}>
-                            <Text style={styles.infoText}>Gráfico da aceleração: {acelerometro.Ay.toFixed(2)}g</Text>
-                            <DynamicChart label="Y" data={historico.Ay} color={CORES_GRAFICOS.tempoY} startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth} font={skiaFont}/>
-                        </View>
-                        <View style={[styles.chartCard, { width: chartCardWidth }]}>
-                            <Text style={styles.infoText}>Gráfico da transformada rápida (FFT)</Text>
-                            <DynamicChart label="Y FFT" data={fftY} color={CORES_GRAFICOS.fftY} isFFT={true} pointWidth={25} containerWidth={chartCardWidth} font={skiaFont}/>
-                        </View>
-
-                        <View style={styles.separator} />
-
-                        {/* Gráfico Z */}
-                        <Text style={styles.chartTitle}>Eixo Z</Text>
-                        <View style={[styles.chartCard, { width: chartCardWidth }]}>
-                            <Text style={styles.infoText}>Gráfico da aceleração: {acelerometro.Az.toFixed(2)}g</Text>
-                            <DynamicChart label="Z" data={historico.Az} color={CORES_GRAFICOS.tempoZ} startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth} font={skiaFont}/>
-                        </View>
-                        <View style={[styles.chartCard, { width: chartCardWidth }]}>
-                            <Text style={styles.infoText}>Gráfico da transformada rápida (FFT)</Text>
-                            <DynamicChart label="Z FFT" data={fftZ} color={CORES_GRAFICOS.fftZ} isFFT={true} pointWidth={25} containerWidth={chartCardWidth} font={skiaFont}/>
-                        </View>
-                    </View>
-                </View>
-            </ScrollView>
+      <View style={styles.mainContainer}>
+        <StatusBar style="dark" />
+  
+        <View style={styles.backgroundImageContainer}>
+          <Image
+            source={require('../../assets/adaptive-icon.png')}
+            style={styles.backgroundImage}
+          />
         </View>
+  
+        <ScrollView style={styles.scroll}>
+          <View style={styles.headerContainer}>
+            <Image
+              source={require('../../assets/icon-barra.png')}
+              style={styles.titleImage}
+            />
+          </View>
+  
+          <View style={styles.container}>
+            {/* Este container superior ainda ficará lado a lado em paisagem */}
+            <View style={styles.topContainerPortrait}>
+              <View style={styles.infoContainer}>
+                <Text style={styles.infoText}>Status: {connectionStatus}</Text>
+              </View>
+  
+              <View style={isLandscape ? styles.buttonRow : styles.buttonColumn}>
+                {foundDevice && !deviceID && (
+                  <View style={styles.buttonWrapper}>
+                    <TouchableOpacity
+                      style={[styles.customButton, styles.connectButton]}
+                      onPress={handleConnectPress}
+                    >
+                      <Text style={styles.customButtonText}>
+                        Conectar ao {foundDevice.name}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+  
+                <View style={styles.buttonWrapper}>
+                  <TouchableOpacity
+                    style={[styles.customButton, styles.resetButton]}
+                    onPress={handleResetConnection}
+                  >
+                    <Text style={styles.customButtonText}>
+                      Resetar Conexão
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+  
+            {/* O container dos gráficos não precisa mais de estilo condicional */}
+            <View style={styles.chartsWrapper}>
+              
+              {/* --- A LÓGICA DA LARGURA MUDA AQUI --- */}
+              {/* Gráfico X */}
+              <Text style={styles.chartTitle}>Eixo X </Text>
+              <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
+                <Text style={styles.infoText}>Gráfico da aceleração: {acelerometro.Ax}g</Text>
+                <DynamicChart label="X" data={historico.Ax} color="#E74C3C" startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth}/>
+              </View>
+              <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
+                <Text style={styles.infoText}>Transformada rápida de fourrier</Text>
+                <DynamicChart label="X FFT" data={fftX} color="#9a2b1eff" isFFT={true} pointWidth={25} containerWidth={chartCardWidth}/>
+              </View>
+  
+              <View style={styles.separator} />
+  
+              {/* Gráfico Y */}
+              <Text style={styles.chartTitle}>Eixo Y </Text>
+              <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
+                <Text style={styles.infoText}>Gráfico da aceleração: {acelerometro.Ay}g</Text>
+                <DynamicChart label="Y" data={historico.Ay} color="#2ECC71" startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth}/>
+              </View>
+              <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
+                <Text style={styles.infoText}>Transformada rápida de fourrier</Text>
+                <DynamicChart label="Y FFT" data={fftY} color="#188144ff" isFFT={true} pointWidth={25} containerWidth={chartCardWidth}/>
+              </View>
+  
+              <View style={styles.separator} />
+  
+              {/* Gráfico Z */}
+              <Text style={styles.chartTitle}>Eixo Z </Text>
+              <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
+                <Text style={styles.infoText}>Gráfico da aceleração: {acelerometro.Az}g</Text>
+                <DynamicChart label="Z" data={historico.Az} color="#3498DB" startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth}/>
+              </View>
+              <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
+                <Text style={styles.infoText}>Transformada rápida de fourrier</Text>
+                <DynamicChart label="Z FFT" data={fftZ} color="#145682ff" isFFT={true} pointWidth={25} containerWidth={chartCardWidth}/>
+              </View>
+            </View>
+          
+          </View>
+        </ScrollView>
+      </View>
     );
 };
 
@@ -167,7 +152,7 @@ const styles = StyleSheet.create({
   backgroundImage: {
     width: '100%',
     height: undefined,
-    aspectRatio: 1, 
+    aspectRatio: 1, // 1024 / 1024 = 1
     opacity: 0.15,
   },
   scroll: {
@@ -175,17 +160,11 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: 'transparent',
   },
-  separator: {
-    height: 1,
-    width: '90%',
-    backgroundColor: '#CCCCCC',
-    marginVertical: 30,
-  },
 
   // --- CABEÇALHO ---
   headerContainer: {
     width: '100%',
-    paddingTop: 40, 
+    paddingTop: 50, 
     paddingBottom: 15,
     paddingHorizontal: 20, 
     backgroundColor: '#FFFFFF',
@@ -200,7 +179,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   titleImage: {
-    height: 40, 
+    height: 40, // Altura fixa para a imagem do título
     width: undefined,
     aspectRatio: 2506 / 1024,
     resizeMode: 'contain',
@@ -213,19 +192,17 @@ const styles = StyleSheet.create({
     paddingBottom: 50,
     backgroundColor: 'transparent'
   },
+  separator: {
+    height: 1, // Altura de 1 pixel para formar uma linha fina
+    width: '90%', // Largura de 90% para não encostar nas laterais
+    backgroundColor: '#CCCCCC', // Uma cor cinza claro
+    marginVertical: 30, // Um bom espaçamento vertical (15px acima, 15px abaixo)
+  },
   
   // --- LAYOUT RESPONSIVO (TOPO) ---
   topContainerPortrait: {
     width: '90%',
     alignItems: 'center',
-    marginTop: 20,
-  },
-  topContainerLandscape: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 20,
     marginTop: 20,
   },
   infoContainer: {
@@ -252,8 +229,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
     minWidth: 160,
   },
+  // --- ESTILOS PARA BOTÕES CUSTOMIZADOS ---
   customButton: {
-    width: '100%', 
+    width: '100%', // Ocupa toda a largura do buttonWrapper
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
@@ -272,10 +250,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#88281dff',
   },
   customButtonText: {
-    fontFamily: 'Satoshi-Bold', 
+    fontFamily: 'Satoshi-Bold', // <-- A FONTE QUE VOCÊ PEDIU!
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '500', 
+    fontWeight: '500', // Um peso médio para melhor legibilidade
   },
   // --- GRÁFICOS ---
   chartsWrapper: {
@@ -285,11 +263,33 @@ const styles = StyleSheet.create({
   },
   chartCard: {
     marginBottom: 20,
+    // A largura dinâmica é aplicada diretamente no JSX, não aqui.
   },
   chartTitle: {
     fontFamily: 'Satoshi-Bold',
     fontSize: 16,
     color: '#333333',
     marginBottom: 8,
+  },
+  
+  // Estilos usados DENTRO do componente DynamicChart
+  chartContainer: {
+    marginVertical: 8,
+    borderRadius: 16,
+    width: '100%', // <-- CORRIGIDO
+    height: 220,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(245, 245, 245, 0.8)',
+    borderWidth: 1,
+    borderColor: '#ddd'
+  },
+  chartPlaceholder: { 
+    width: '100%', // <-- CORRIGIDO
+    height: 220,
+    fontFamily: 'Satoshi-Regular',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 245, 245, 0.8)',
+    borderRadius: 16,
   }
 });

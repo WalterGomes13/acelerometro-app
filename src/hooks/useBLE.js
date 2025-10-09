@@ -5,16 +5,69 @@ import { base64ToUtf8 } from '../utils/base64';
 
 const SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
 const TX_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
+const MAX_PONTOS_HISTORICO = 300;
 
 export const useBLE = () => {
-  const bleManagerRef = useRef(new BleManager());
+  const bleManagerRef = useRef(null);
   const deviceRef = useRef(null);
 
-  const [acelerometro, setAcelerometro] = useState({ Ax: 0, Ay: 0, Az: 0 });
-  const [connectionStatus, setConnectionStatus] = useState("Aguardando...");
+  const [deviceID, setDeviceID] = useState(null);
+  const [acelerometro, setAcelerometro] = useState({ Ax: 0, Ay: 0, Az: 0 }); // Inicia como objeto
+  const [historico, setHistorico] = useState({ Ax: [], Ay: [], Az: [] });
+  const [connectionStatus, setConnectionStatus] = useState("Aguardando permissões...");
   const [foundDevice, setFoundDevice] = useState(null);
 
   const bufferRef = useRef([]);
+  const animationFrameId = useRef(null);
+  const recordingStartTimeRef = useRef(null);
+
+  useEffect(() => {
+    bleManagerRef.current = new BleManager();
+    
+    return () => {
+      if (deviceRef.current) {
+        deviceRef.current.cancelConnection()
+        .catch(err => console.log("Erro ao cancelar conexão:", err));
+      }
+      if (bleManagerRef.current) {
+        bleManagerRef.current.destroy();
+      }
+    };
+  }, []);
+  
+  useEffect(() => {
+    const requestPermissionsAndStartScan = async () => {
+      // Verifica se é Android
+      if (Platform.OS === 'android') {
+        const apiLevel = Platform.Version;
+        
+        let permissionsToRequest = [];
+        if (apiLevel < 31) { // Android 11 e inferior
+          permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+        } else { // Android 12 e superior
+          permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN);
+          permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
+          permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+        }
+
+        const granted = await PermissionsAndroid.requestMultiple(permissionsToRequest);
+
+        const allPermissionsGranted = permissionsToRequest.every(
+          permission => granted[permission] === PermissionsAndroid.RESULTS.GRANTED
+        );
+
+        if (allPermissionsGranted) {
+          console.log("Permissões concedidas! Iniciando scan...");
+          searchAndConnectToDevice(); 
+        } else {
+          console.log("Permissões negadas.");
+          setConnectionStatus("Permissões de Bluetooth são necessárias.");
+        }
+      }
+    };
+
+    requestPermissionsAndStartScan();
+  }, []);
 
   useEffect(() => {
     const gameLoop = () => {
@@ -22,104 +75,152 @@ export const useBLE = () => {
       bufferRef.current = [];
 
       if (batch.length > 0) {
+        if (recordingStartTimeRef.current === null && batch[0].timestamp) {
+          recordingStartTimeRef.current = batch[0].timestamp;
+        }
         const lastPoint = batch[batch.length - 1];
+
+        // MUDANÇA NA ESTRUTURA DO HISTÓRICO:
+        // Agora, cada array armazena objetos { value, timestamp }
+        setHistorico(prev => ({
+          Ax: [...prev.Ax, { value: lastPoint.Ax, timestamp: lastPoint.timestamp }].slice(-MAX_PONTOS_HISTORICO),
+          Ay: [...prev.Ay, { value: lastPoint.Ay, timestamp: lastPoint.timestamp }].slice(-MAX_PONTOS_HISTORICO),
+          Az: [...prev.Az, { value: lastPoint.Az, timestamp: lastPoint.timestamp }].slice(-MAX_PONTOS_HISTORICO),
+        }));
+        
         setAcelerometro(lastPoint);
       }
-      
-      requestAnimationFrame(gameLoop);
+
+      animationFrameId.current = requestAnimationFrame(gameLoop);
     };
 
-    const frameId = requestAnimationFrame(gameLoop);
-    return () => cancelAnimationFrame(frameId);
+    animationFrameId.current = requestAnimationFrame(gameLoop);
+
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+    };
   }, []);
 
-  // --- FUNÇÕES DE AÇÃO (A "API" do nosso Hook) ---
-
-  const scanForDevices = async () => {
-    if (Platform.OS === 'android') {
-      const locationPermission = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
-      if (locationPermission !== PermissionsAndroid.RESULTS.GRANTED) {
-        setConnectionStatus("Permissão de localização é necessária.");
-        return;
-      }
-      if (Platform.Version >= 31) {
-        const scanPermission = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN);
-        const connectPermission = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
-        if (scanPermission !== PermissionsAndroid.RESULTS.GRANTED || connectPermission !== PermissionsAndroid.RESULTS.GRANTED) {
-          setConnectionStatus("Permissões de Bluetooth são necessárias.");
-          return;
+  useEffect(() => {
+    const subscription = bleManagerRef.current.onDeviceDisconnected(
+      deviceID,
+      (error, device) =>{
+        if (error) {
+          console.log("Disconnected with error:", error);
+        }
+        setConnectionStatus("Disconnected");
+        console.log("Disconnected device");
+        setAcelerometro({ Ax: 0, Ay: 0, Az: 0 });
+        if (deviceRef.current){
+          setConnectionStatus("Reconnecting...");
+          connectToDevice(deviceRef.current)
+            .then(() => setConnectionStatus("Connected"))
+            .catch((error) => {
+              console.log("Reconnection failed: ", error);
+              setConnectionStatus("Reconndction failed");
+            });
         }
       }
-    }
-    
-    setConnectionStatus("Procurando dispositivo...");
+    );
+    return () => subscription.remove();
+  }, [deviceID]);
+  
+  const searchAndConnectToDevice = () => {
+    if (!bleManagerRef.current) return;
+    setConnectionStatus("Escanenando...");
+    setFoundDevice(null);
+
     bleManagerRef.current.startDeviceScan(null, null, (error, device) => {
       if (error) {
-        console.error("Erro no scan:", error);
-        setConnectionStatus("Erro ao procurar");
+        console.error(error);
+        setConnectionStatus("Erro ao procurar por dispositivos");
         return;
       }
       if (device.name === "ESP32-MPU6050") {
-        bleManagerRef.current.stopDeviceScan();
+        bleManagerRef.current.stopDeviceScan(); // CORREÇÃO: Usar a referência correta
         setConnectionStatus("Dispositivo encontrado!");
-        setFoundDevice(device);
+        setFoundDevice(device)
       }
     });
   };
 
   const connectToDevice = async (device) => {
-    if (!device) return;
+    if (deviceRef.current) {
+      console.log("Já existe um device conectado:", deviceRef.current.id);
+      return deviceRef.current;
+    }
 
-    setConnectionStatus("Conectando...");
     try {
       const connectedDevice = await device.connect();
-      deviceRef.current = connectedDevice;
-      setFoundDevice(null);
+      setDeviceID(connectedDevice.id);
       setConnectionStatus("Conectado");
+      deviceRef.current = connectedDevice;
 
       await connectedDevice.discoverAllServicesAndCharacteristics();
-      
-      connectedDevice.monitorCharacteristicForService(SERVICE_UUID, TX_UUID, (error, char) => {
-        if (error) {
-          console.error("Erro no monitoramento:", error);
-          resetStateAndScan(); 
-          return;
+
+      connectedDevice.monitorCharacteristicForService(
+        SERVICE_UUID,
+        TX_UUID,
+        (error, char) => {
+          if (error) {
+            console.error(error);
+            setConnectionStatus(`Dispositivo deconectado!`);
+            return;
+          }
+          const decodedStr = base64ToUtf8(char.value || '');
+          const parts = decodedStr.trim().split(",").map(s => parseFloat(s));
+          const Ax = Number.isFinite(parts[0]) ? parts[0] : 0;
+          const Ay = Number.isFinite(parts[1]) ? parts[1] : 0;
+          const Az = Number.isFinite(parts[2]) ? parts[2] : 0;
+
+          bufferRef.current.push({ Ax, Ay, Az, timestamp: Date.now() });
         }
-        const decodedStr = base64ToUtf8(char.value || '');
-        const parts = decodedStr.trim().split(",").map(s => parseFloat(s));
-        const [Ax, Ay, Az] = parts.map(p => Number.isFinite(p) ? p : 0);
-        bufferRef.current.push({ Ax, Ay, Az, timestamp: Date.now() });
-      });
+      );
 
-      connectedDevice.onDisconnected((error, disconnectedDevice) => {
-        console.log("Dispositivo desconectado!");
-        resetStateAndScan();
-      });
-
+      return connectedDevice;
     } catch (error) {
-      console.log("Erro na conexão:", error);
-      setConnectionStatus("Falha ao conectar");
+      console.log(error);
+      setConnectionStatus("Erro na conexão");
     }
   };
 
-  const resetConnection = async () => {
+  const handleConnectPress = () =>{
+    if (foundDevice){
+      connectToDevice(foundDevice);
+    }
+  }
+
+  const handleResetConnection = async () => {
+    // 1. Avisa ao usuário que o reset começou
+    setConnectionStatus("Resetando conexão...");
+
+    // 2. Para qualquer busca de dispositivos que possa estar ativa
     bleManagerRef.current?.stopDeviceScan();
+
+    // 3. Tenta desconectar do dispositivo atual, se houver um
     if (deviceRef.current) {
       try {
         await deviceRef.current.cancelConnection();
-      } catch (error) { console.error("Falha ao desconectar:", error); }
+        console.log("Desconectado com sucesso para reset");
+      } catch (error) {
+        console.error("Falha ao desconectar durante reset:", error);
+      }
     }
-    resetStateAndScan();
-  };
 
-  // --- FUNÇÕES AUXILIARES INTERNAS ---
-
-  const resetStateAndScan = () => {
+    // 4. Limpa todo o estado e as referências para o estado inicial
+    setHistorico({ Ax: [], Ay: [], Az: [] });
     setAcelerometro({ Ax: 0, Ay: 0, Az: 0 });
+    setDeviceID(null);
     setFoundDevice(null);
-    deviceRef.current = null;
     bufferRef.current = [];
-    scanForDevices();
+    recordingStartTimeRef.current = null;
+    deviceRef.current = null; // Muito importante para permitir uma nova conexão
+
+    // 5. Inicia o processo de busca novamente
+    console.log("Reiniciando scan após reset...");
+    searchAndConnectToDevice();
   };
 
   // Retorna os estados e funções que a UI vai precisar
@@ -127,8 +228,10 @@ export const useBLE = () => {
     acelerometro,
     connectionStatus,
     foundDevice,
-    scanForDevices,
-    connectToDevice,
-    resetConnection,
+    historico,
+    deviceID,
+    recordingStartTimeRef,
+    handleConnectPress,
+    handleResetConnection
   };
 };

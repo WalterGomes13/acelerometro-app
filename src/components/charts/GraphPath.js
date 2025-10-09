@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Canvas, Path, Skia, SkiaText } from '@shopify/react-native-skia';
+import { Canvas, Path, Skia, Text as SkiaText } from '@shopify/react-native-skia';
 
 const PADDING = { top: 20, right: 30, bottom: 30, left: 40 };
 
@@ -25,17 +25,43 @@ export const GraphPath = ({ data, color, chartWidth, chartHeight, isFFT, minY, m
   // Guarda a última label de tempo desenhada para evitar sobreposição
   let lastLabelTime = -Infinity; 
 
+  const renderXAxisLabels = () => {
+    // Só executa se for o gráfico da FFT e a fonte estiver carregada
+    if (!isFFT || !font) return null;
+
+    // 1. Defina os parâmetros da sua FFT
+    const sampleRate = 20; // IMPORTANTE: Este valor deve ser o mesmo usado na sua função calcularFFT
+    const maxFreq = sampleRate / 2; // A frequência máxima de uma FFT é metade da taxa de amostragem
+    const labels = [];
+
+    // 2. Crie um loop para cada frequência inteira que queremos mostrar (0Hz, 1Hz, 2Hz, ...)
+    for (let hz = 0; hz <= maxFreq; hz++) {
+      
+      // 3. Calcule a posição X para cada frequência.
+      // A posição é uma proporção da frequência em relação à frequência máxima.
+      const x = PADDING.left + (hz / maxFreq) * graphWidth - 4; // o -4 é um pequeno ajuste para centralizar o texto
+      const y = chartHeight - PADDING.bottom + 14;
+
+      labels.push(
+        <SkiaText
+          key={`xt-hz-${hz}`}
+          x={x}
+          y={y}
+          text={`${hz}Hz`}
+          font={font}
+          color="black"
+        />
+      );
+    }
+    return labels;
+  };
+
   return (
     <Canvas style={{ width: chartWidth, height: chartHeight }}>
       <Path path={skPath} style="stroke" color={color} strokeWidth={2} />
 
+      {renderXAxisLabels()}
       {/* Labels X para FFT */}
-      {isFFT && font && data.map((p, i) => {
-        if (i % 5 !== 0) return null;
-        const x = PADDING.left + (i / (data.length - 1)) * graphWidth - 6;
-        const y = chartHeight - PADDING.bottom + 14;
-        return (<SkiaText key={`xt-freq-${i}`} x={x} y={y} text={`${p.x.toFixed(0)}Hz`} font={font} color="black" />);
-      })}
       {!isFFT && font && startTime && data.map((point, i) => {
         const elapsedMillis = point.timestamp - startTime;
         const elapsedSeconds = elapsedMillis / 1000;
