@@ -4,7 +4,7 @@
 ## Funcionalidades
 - Conexão BLE manual com ESP32
 - Leitura dos valores dos três eixos (X, Y, e Z) do acelerômetro
-- Plotagem dos gráficos de aceleração e transformada rápida de fourrier em tempo real
+- Plotagem dos gráficos de aceleração e da transformada rápida de fourrier em tempo real
 - Reset e reconexão manual com o ESP32
 - Histórico dos dados de aceleração exibidos
 
