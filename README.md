@@ -59,4 +59,21 @@ O firmware do ESP32 lê os dados de aceleração (~20Hz) e envia para o app pelo
 <br>
 
 ## Capturas de tela
-![Botões de conexão e reset](assets/screenshots/screenshot_connectbtn.jpg)
+#### Botões de conexão e reset
+<img src="assets/screenshots/screenshot_connectbtn.jpg" width="300" /> <br>
+#### Gráficos eixo X
+<img src="assets/screenshots/screenshot_eixox.jpg" width="300" /> <br>
+#### Gráficos eixo Y
+<img src="assets/screenshots/screenshot_eixoy.jpg" width="300" /> <br>
+#### Gráficos eixo Z
+<img src="assets/screenshots/screenshot_eixoz.jpg" width="300" /> <br>
+
+<br>
+
+## Autor
+
+Este projeto foi desenvolvido por **[Walter Gomes](https://github.com/WalterGomes13)**.
+
+* **LinkedIn:** [LinkedIn](https://www.linkedin.com/in/josewaltergomes/)
+* **Email:** `josewaltergomes13@gmail.com`
+
