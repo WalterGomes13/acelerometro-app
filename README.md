@@ -49,4 +49,14 @@ O projeto **Unifor Motion Lab** foi desenvolvido utilizando um conjunto de tecno
 
   <br>
 
-  
+## Configuração do ESP32
+
+O app se conecta a um ESP32 com sensor MPU6050 via BLE.  
+O firmware do ESP32 lê os dados de aceleração (~20Hz) e envia para o app pelo serviço BLE `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`.  
+
+> O código completo do ESP32 está disponível em [`/esp32-firmware`](./esp32-firmware).
+
+<br>
+
+## Capturas de tela
+
