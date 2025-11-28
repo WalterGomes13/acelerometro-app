@@ -48,7 +48,7 @@ O ESP32 é configurado para ler os dados do sensor **MPU6050** via I2C e enviar 
 ### 🔄 Loop Principal
 
 1. Verifica se algum dispositivo está conectado (`deviceConnected`).  
-2. A cada ~50ms (~20Hz):
+2. A cada ~10ms (~100Hz):
    - Lê os registros do acelerômetro via I2C (`AcX`, `AcY`, `AcZ`).  
    - Converte para valores de aceleração em `g` (`Ax, Ay, Az`).  
    - Concatena os valores em uma string separada por vírgula: `"Ax,Ay,Az"`.  
@@ -59,7 +59,7 @@ O ESP32 é configurado para ler os dados do sensor **MPU6050** via I2C e enviar 
 
 ### 💡 Observações
 
-- A frequência de atualização é ~20Hz (intervalo de 50ms).  
+- A frequência de atualização é ~100Hz (intervalo de 10ms).  
 - Quando o dispositivo BLE se desconecta, o servidor reinicia a propaganda automaticamente para aguardar nova conexão.  
 - O app React Native lê os valores enviados e processa a visualização em tempo real.  
 
