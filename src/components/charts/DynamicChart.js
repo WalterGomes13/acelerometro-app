@@ -48,7 +48,7 @@ export const DynamicChart = ({
     if (isFFT) {
       // Para FFT, mantemos a lógica antiga de auto-ajuste
       finalMinY = 0;    // A magnitude da FFT não é negativa, então começamos em 0.
-      finalMaxY = 20;
+      finalMaxY = 0.5;
     } else {
       // --- LÓGICA DO EIXO Y FIXO E DINÂMICO PARA ACELERAÇÃO ---
       const defaultBoundary = 1.5;
@@ -84,7 +84,7 @@ export const DynamicChart = ({
   // Calcula a largura do gráfico de forma condicional
   let chartWidth;
   if (isFFT) {
-    chartWidth = PADDING.left + PADDING.right + (dataLen * pointWidth);
+    chartWidth = visibleWidth;
   } else {
     // Para os gráficos de aceleração, mantém a lógica de crescer com o tempo.
     chartWidth = Math.max(visibleWidth, PADDING.left + PADDING.right + (dataLen * pointWidth));
@@ -110,16 +110,11 @@ export const DynamicChart = ({
         chartHeight={chartHeight} 
         font={font} 
       />
-      <ScrollView
-        horizontal
-        ref={scrollRef}
-        showsHorizontalScrollIndicator={false}
-        style={{ flex: 1 }}
-      >
+      {isFFT ? (
         <GraphPath
           data={trimmedData}
           color={color}
-          chartWidth={chartWidth}
+          chartWidth={chartWidth - PADDING.left}
           chartHeight={chartHeight}
           isFFT={isFFT}
           minY={minY}
@@ -127,7 +122,26 @@ export const DynamicChart = ({
           font={font}
           startTime={startTime}
         />
-      </ScrollView>
+      ) : (
+        <ScrollView
+          horizontal
+          ref={scrollRef}
+          showsHorizontalScrollIndicator={false}
+          style={{ flex: 1 }}
+        >
+          <GraphPath
+            data={trimmedData}
+            color={color}
+            chartWidth={chartWidth}
+            chartHeight={chartHeight}
+            isFFT={isFFT}
+            minY={minY}
+            maxY={maxY}
+            font={font}
+            startTime={startTime}
+          />
+        </ScrollView>
+      )}
     </View>
   );
 };

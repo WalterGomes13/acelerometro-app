@@ -14,7 +14,7 @@ export const GraphPath = ({ data, color, chartWidth, chartHeight, isFFT, minY, m
     
     const rangeY = (maxY - minY) === 0 ? 1 : maxY - minY;
     const commands = valuesOnly.map((val, i) => {
-      const x = PADDING.left + (i / (valuesOnly.length - 1)) * graphWidth;
+      const x = PADDING.left + (i / (valuesOnly.length - 1)) * graphWidth ;
       const y = PADDING.top + graphHeight - ((val - minY) / rangeY) * graphHeight;
       return `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
     }).join(' ');
@@ -30,16 +30,16 @@ export const GraphPath = ({ data, color, chartWidth, chartHeight, isFFT, minY, m
     if (!isFFT || !font) return null;
 
     // 1. Defina os parâmetros da sua FFT
-    const sampleRate = 20; // IMPORTANTE: Este valor deve ser o mesmo usado na sua função calcularFFT
+    const sampleRate = 100; // IMPORTANTE: Este valor deve ser o mesmo usado na sua função calcularFFT
     const maxFreq = sampleRate / 2; // A frequência máxima de uma FFT é metade da taxa de amostragem
     const labels = [];
 
     // 2. Crie um loop para cada frequência inteira que queremos mostrar (0Hz, 1Hz, 2Hz, ...)
-    for (let hz = 0; hz <= maxFreq; hz++) {
+    for (let hz = 0; hz <= maxFreq; hz+=10) {
       
       // 3. Calcule a posição X para cada frequência.
       // A posição é uma proporção da frequência em relação à frequência máxima.
-      const x = PADDING.left + (hz / maxFreq) * graphWidth - 4; // o -4 é um pequeno ajuste para centralizar o texto
+      const x = (PADDING.left-10) + (hz / maxFreq) * graphWidth ; // o -4 é um pequeno ajuste para centralizar o texto
       const y = chartHeight - PADDING.bottom + 14;
 
       labels.push(

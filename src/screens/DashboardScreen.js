@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View,  ScrollView, TouchableOpacity, Image, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import {useBLE} from '../hooks/useBLE';
@@ -9,12 +9,14 @@ import { useFont } from '@shopify/react-native-skia';
 export const DashboardScreen = () =>{
     const { width: windowWidth, height: windowHeight } = useWindowDimensions();
     const isLandscape = windowWidth > windowHeight;
+    const tam_buffer = 256;
 
     const {
         acelerometro,
         connectionStatus,
         foundDevice,
         historico,
+        historicoAccel,
         deviceID,
         recordingStartTimeRef,
         handleConnectPress,
@@ -23,9 +25,49 @@ export const DashboardScreen = () =>{
 
     const skiaFont = useFont(require('../../assets/fonts/Satoshi-Regular.otf'), 10);
 
-    const fftX = useMemo(() => calcularFFT(historico.Ax.map(p => p.value)), [historico.Ax]);
-    const fftY = useMemo(() => calcularFFT(historico.Ay.map(p => p.value)), [historico.Ay]);
-    const fftZ = useMemo(() => calcularFFT(historico.Az.map(p => p.value)), [historico.Az]);
+    const ultimaFFT_X = useRef([]);
+    const fftX = useMemo(() => {
+      const len = historico.Ax.length;
+      if (len >= tam_buffer){
+        console.log("FFT x calculada")
+        const novaFFT = calcularFFT(historico.Ax.map(p => p.value))
+        ultimaFFT_X.current = novaFFT;
+        return novaFFT;
+      } 
+      return ultimaFFT_X.current;
+    }, [historico.Ax]);
+    
+    const ultimaFFT_Y = useRef([]);
+    const fftY = useMemo(() => {
+      const len = historico.Ay.length;
+      if (len >= tam_buffer){
+        console.log("FFT y calculada")
+        const novaFFT = calcularFFT(historico.Ay.map(p => p.value))
+        ultimaFFT_Y.current = novaFFT;
+        return novaFFT;
+      } 
+      return ultimaFFT_Y.current;
+    }, [historico.Ay]);
+    
+    const ultimaFFT_Z = useRef([]);
+    const fftZ = useMemo(() => {
+      const len = historico.Az.length;
+      if (len >= tam_buffer){
+        console.log("FFT z calculada")
+        const novaFFT = calcularFFT(historico.Az.map(p => p.value))
+        ultimaFFT_Z.current = novaFFT;
+        return novaFFT;
+      } 
+      return ultimaFFT_Z.current;
+    }, [historico.Az]);
+
+    useEffect(() => {
+      console.log("Tamanho do histórico:", {
+        Ax: historico.Ax.length,
+        Ay: historico.Ay.length,
+        Az: historico.Az.length,
+      });
+    }, [historico]);
 
     if(!skiaFont){
       return null;
@@ -94,7 +136,7 @@ export const DashboardScreen = () =>{
               <Text style={styles.chartTitle}>Eixo X </Text>
               <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
                 <Text style={styles.infoText}>Gráfico da aceleração: {acelerometro.Ax}g</Text>
-                <DynamicChart label="X" data={historico.Ax} color="#E74C3C" startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth}/>
+                <DynamicChart label="X" data={historicoAccel.Ax} color="#E74C3C" startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth}/>
               </View>
               <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
                 <Text style={styles.infoText}>Transformada rápida de fourrier</Text>
@@ -107,7 +149,7 @@ export const DashboardScreen = () =>{
               <Text style={styles.chartTitle}>Eixo Y </Text>
               <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
                 <Text style={styles.infoText}>Gráfico da aceleração: {acelerometro.Ay}g</Text>
-                <DynamicChart label="Y" data={historico.Ay} color="#2ECC71" startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth}/>
+                <DynamicChart label="Y" data={historicoAccel.Ay} color="#2ECC71" startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth}/>
               </View>
               <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
                 <Text style={styles.infoText}>Transformada rápida de fourrier</Text>
@@ -120,7 +162,7 @@ export const DashboardScreen = () =>{
               <Text style={styles.chartTitle}>Eixo Z </Text>
               <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
                 <Text style={styles.infoText}>Gráfico da aceleração: {acelerometro.Az}g</Text>
-                <DynamicChart label="Z" data={historico.Az} color="#3498DB" startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth}/>
+                <DynamicChart label="Z" data={historicoAccel.Az} color="#3498DB" startTime={recordingStartTimeRef.current} containerWidth={chartCardWidth}/>
               </View>
               <View style={[styles.chartCard, { width: windowWidth - 40 }]}>
                 <Text style={styles.infoText}>Transformada rápida de fourrier</Text>

@@ -16,7 +16,7 @@ bool deviceConnected = false;
 
 // Variáveis para o controle de tempo não-bloqueante
 unsigned long previousMillis = 0;
-const long interval = 50; // Intervalo de 50ms para atingir ~20Hz
+const long interval = 10; // Intervalo de 10ms para atingir ~100Hz
 
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
@@ -38,8 +38,8 @@ void setup() {
   Serial.begin(115200);
   Wire.begin(21, 22);
   Wire.beginTransmission(MPU);
-  Wire.write(0x6B);
-  Wire.write(0);
+  Wire.write(0x1C);
+  Wire.write(0x10);
   Wire.endTransmission(true);
 
   BLEDevice::init("ESP32-MPU6050");
@@ -77,9 +77,9 @@ void loop() {
       AcX = (Wire.read() << 8) | Wire.read();
       AcY = (Wire.read() << 8) | Wire.read();
       AcZ = (Wire.read() << 8) | Wire.read();
-      float Ax = AcX / 16384.0;
-      float Ay = AcY / 16384.0;
-      float Az = AcZ / 16384.0;
+      float Ax = AcX / 4096.0;
+      float Ay = AcY / 4096.0;
+      float Az = AcZ / 4096.0;
       String data = String(Ax, 2) + "," + String(Ay, 2) + "," + String(Az, 2);
       pCharacteristic->setValue(data.c_str());
       pCharacteristic->notify();

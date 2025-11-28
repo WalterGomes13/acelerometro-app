@@ -5,11 +5,12 @@ import { base64ToUtf8 } from '../utils/base64';
 
 const SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
 const TX_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
-const MAX_PONTOS_HISTORICO = 300;
+const MAX_PONTOS_HISTORICO = 256;
 
 export const useBLE = () => {
   const [deviceID, setDeviceID] = useState(null);
-  const [acelerometro, setAcelerometro] = useState({ Ax: 0, Ay: 0, Az: 0 }); // Inicia como objeto
+  const [acelerometro, setAcelerometro] = useState({ Ax: 0, Ay: 0, Az: 0 }); 
+  const [historicoAccel, setHistoricoAccel] = useState({ Ax: [], Ay: [], Az: []})
   const [historico, setHistorico] = useState({ Ax: [], Ay: [], Az: [] });
   const [connectionStatus, setConnectionStatus] = useState("Aguardando permissões...");
   const [foundDevice, setFoundDevice] = useState(null);
@@ -76,28 +77,36 @@ export const useBLE = () => {
   }, []);
 
   useEffect(() => {
-    const gameLoop = () => {
-      const batch = [...bufferRef.current];
-      bufferRef.current = [];
-
-      if (batch.length > 0) {
-        if (recordingStartTimeRef.current === null && batch[0].timestamp) {
-          recordingStartTimeRef.current = batch[0].timestamp;
-        }
-        const lastPoint = batch[batch.length - 1];
-
-        // MUDANÇA NA ESTRUTURA DO HISTÓRICO:
-        // Agora, cada array armazena objetos { value, timestamp }
-        setHistorico(prev => ({
-          Ax: [...prev.Ax, { value: lastPoint.Ax, timestamp: lastPoint.timestamp }].slice(-MAX_PONTOS_HISTORICO),
-          Ay: [...prev.Ay, { value: lastPoint.Ay, timestamp: lastPoint.timestamp }].slice(-MAX_PONTOS_HISTORICO),
-          Az: [...prev.Az, { value: lastPoint.Az, timestamp: lastPoint.timestamp }].slice(-MAX_PONTOS_HISTORICO),
-        }));
-        
-        setAcelerometro(lastPoint);
-      }
-
+    let lastProcess = 0;
+    const gameLoop = (timestamp) => {
       animationFrameId.current = requestAnimationFrame(gameLoop);
+      if(timestamp - lastProcess < 16) return;
+      lastProcess = timestamp;
+
+      const batch = bufferRef.current.splice(0, bufferRef.current.length);
+      
+      if (batch.length === 0) return;
+      
+      if (recordingStartTimeRef.current === null && batch[0].timestamp){
+        recordingStartTimeRef.current = batch[0].timestamp;
+      }
+      const lastPoint = batch[batch.length - 1];
+
+      setHistoricoAccel(prev => ({
+        Ax: [...prev.Ax, {value: lastPoint.Ax, timestamp: lastPoint.timestamp}].slice(-MAX_PONTOS_HISTORICO),
+        Ay: [...prev.Ay, {value: lastPoint.Ay, timestamp: lastPoint.timestamp}].slice(-MAX_PONTOS_HISTORICO),
+        Az: [...prev.Az, {value: lastPoint.Az, timestamp: lastPoint.timestamp}].slice(-MAX_PONTOS_HISTORICO),
+      }))
+
+      setHistorico(prev => {
+        const Ax = prev.Ax.concat(batch.map(p=>({value: p.Ax, timestamp: p.timestamp}))).slice(-MAX_PONTOS_HISTORICO);
+        const Ay = prev.Ay.concat(batch.map(p=>({value: p.Ay, timestamp: p.timestamp}))).slice(-MAX_PONTOS_HISTORICO);
+        const Az = prev.Az.concat(batch.map(p=>({value: p.Az, timestamp: p.timestamp}))).slice(-MAX_PONTOS_HISTORICO);
+
+        return{Ax, Ay, Az};
+      });
+
+      setAcelerometro(lastPoint);
     };
 
     animationFrameId.current = requestAnimationFrame(gameLoop);
@@ -194,6 +203,7 @@ export const useBLE = () => {
             setConnectionStatus(`Dispositivo deconectado!`);
             return;
           }
+
           const decodedStr = base64ToUtf8(char.value || '');
           const parts = decodedStr.trim().split(",").map(s => parseFloat(s));
           const Ax = Number.isFinite(parts[0]) ? parts[0] : 0;
@@ -249,6 +259,7 @@ export const useBLE = () => {
 
     // 4. Limpa todo o estado e as referências para o estado inicial
     setHistorico({ Ax: [], Ay: [], Az: [] });
+    setHistoricoAccel({ Ax: [], Ay: [], Az: []});
     setAcelerometro({ Ax: 0, Ay: 0, Az: 0 });
     setDeviceID(null);
     setFoundDevice(null);
@@ -270,6 +281,7 @@ export const useBLE = () => {
     connectionStatus,
     foundDevice,
     historico,
+    historicoAccel,
     deviceID,
     recordingStartTimeRef,
     handleConnectPress,
